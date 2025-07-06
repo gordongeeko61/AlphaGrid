@@ -19,7 +19,7 @@ st.set_page_config(
 )
 
 def main():
-    st.title("嶋 Momentum Stock Ranking Dashboard")
+    st.title("Momentum Stock Ranking Dashboard")
     st.markdown("""
     A systematic approach to identify high momentum stocks from Nifty 500 universe,
     filtered by 200-EMA and ranked by risk-adjusted momentum scores.
@@ -78,20 +78,20 @@ def main():
     weights = st.session_state.weights
     
     # Summary stats
-    st.subheader("投 Portfolio Summary")
+    st.subheader("Portfolio Summary")
     col1, col2, col3 = st.columns(3)
     col1.metric("Stocks in Portfolio", len(df_final))
     col2.metric("Avg 3m Momentum", f"{df_final['mom_3m'].mean():.1f}%")
     col3.metric("Avg 12m Momentum", f"{df_final['mom_12m'].mean():.1f}%")
     
     # GenAI Explanation
-    st.subheader("ｧ AI Portfolio Analysis")
+    st.subheader("AI Portfolio Analysis")
     with st.expander("See explanation"):
         summary = generate_summary(df_final)
         st.info(summary)
     
     # Main results
-    st.subheader("醇 Top Momentum Stocks")
+    st.subheader("Top Momentum Stocks")
     st.dataframe(
         df_final[['symbol', 'risk_adj_score', 'rank', 'mom_3m', 'mom_6m', 'mom_12m', 'volatility']]
         .sort_values('risk_adj_score', ascending=False) # Ensure sorting for display consistency
@@ -101,7 +101,7 @@ def main():
     )
     
     # Visualizations
-    st.subheader("嶋 Portfolio Visualizations")
+    st.subheader("Portfolio Visualizations")
     
     tab1, tab2, tab3 = st.tabs(["Momentum Scores", "Heatmap", "Price vs EMA"])
     
