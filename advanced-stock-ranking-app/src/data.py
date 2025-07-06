@@ -2,6 +2,7 @@
 
 import yfinance as yf
 import pandas as pd
+import os
 from datetime import datetime, timedelta
 from config import LOOKBACK_PERIODS, MIN_DAYS_FOR_EMA,UNIVERSE_FILE
 
@@ -50,5 +51,12 @@ def fetch_data(tickers, end_date=None, start_date=None):
 
 def load_universe(file_path):
     """Load the Nifty 500 universe from CSV"""
-    df = pd.read_csv(file_path)
+    # Get the absolute path of the directory containing the current script
+# For app.py, this will be ALPHAGRID-1/advanced-stock-ranking-app/src/
+    current_script_dir = os.path.dirname(os.path.abspath(__file__))
+# Construct the full path to the universe file
+# Since UNIVERSE_FILE is just the filename and it's in the same directory as config.py
+# and assuming app.py is also in the same directory (src)
+    universe_file_full_path = os.path.join(current_script_dir, UNIVERSE_FILE)
+    df = pd.read_csv(universe_file_full_path)
     return df['Symbol'].tolist()
