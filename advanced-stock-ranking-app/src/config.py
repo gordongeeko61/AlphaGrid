@@ -11,7 +11,7 @@ LOOKBACK_PERIODS = {
 }
 
 # Portfolio configuration
-PORTFOLIO_SIZE = 30          # Number of stocks in portfolio
+PORTFOLIO_SIZE = 50          # Number of stocks in portfolio
 EXIT_RANK_THRESHOLD = 60     # Exit if rank falls below this
 MIN_DAYS_FOR_EMA = 200       # Minimum days required for EMA calculation
 

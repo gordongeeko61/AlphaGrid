@@ -1,10 +1,8 @@
-# streamlit_app.py
-
 import streamlit as st
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import numpy as np # Import numpy for np.inf
+# Assuming these modules exist and are functional
 from data import fetch_data, load_universe
 from metrics import compute_metrics_for_all
 from filters import apply_filters
@@ -13,148 +11,160 @@ from config import DEFAULT_WEIGHTS, PORTFOLIO_SIZE, UNIVERSE_FILE
 
 # Page config
 st.set_page_config(
-    page_title="Momentum Stock Ranking",
-    layout="wide",
+    page_title="🚀AlphaGrid",
+    layout="wide", # Use wide layout for more space
     initial_sidebar_state="expanded"
 )
 
-def main():
-    st.title("Momentum Stock Ranking Dashboard")
-    st.markdown("""
-    A systematic approach to identify high momentum stocks from Nifty 500 universe,
-    filtered by 200-EMA and ranked by risk-adjusted momentum scores.
-    """)
-    
-    # Sidebar controls
-    st.sidebar.header("Parameters")
-    w3m = st.sidebar.slider("3-month weight", 0.0, 1.0, DEFAULT_WEIGHTS[0], 0.05)
-    w6m = st.sidebar.slider("6-month weight", 0.0, 1.0, DEFAULT_WEIGHTS[1], 0.05)
-    w12m = st.sidebar.slider("12-month weight", 0.0, 1.0, DEFAULT_WEIGHTS[2], 0.05)
-    outlier_pct = st.sidebar.slider("Outlier filter (%)", 0.0, 10.0, 3.0, 0.5)
-    top_n = st.sidebar.slider("Portfolio size", 10, 100, PORTFOLIO_SIZE, 5)
-    
-    weights = (w3m, w6m, w12m)
-    
-    if st.sidebar.button("Run Analysis"):
-        with st.spinner("Running analysis..."):
-            # Load data
-            tickers = load_universe(UNIVERSE_FILE)
-            data = fetch_data(tickers)
-            
-            # Compute metrics
-            df_metrics = compute_metrics_for_all(data, weights=weights)
-            df_filtered = apply_filters(df_metrics, data, outlier_pct=outlier_pct)
-            
-            # Drop rows with NaN or infinite risk_adj_score
-            # Replace inf with NaN first, then drop NaNs
-            df_filtered = df_filtered.replace([np.inf, -np.inf], np.nan).dropna(subset=['risk_adj_score'])
-            
-            # Ensure df_filtered is not empty after dropping NaNs
-            if df_filtered.empty:
-                st.warning("No stocks with valid risk-adjusted scores after filters. Adjust parameters or check data availability.")
-                # Clear session state if no results
-                if 'df_final' in st.session_state:
-                    del st.session_state.df_final
-                if 'weights' in st.session_state:
-                    del st.session_state.weights
-                return
+# Initialize session state for the explanation if not already present
+if 'genai_explanation' not in st.session_state:
+    st.session_state.genai_explanation = ""
+if 'summary_generated' not in st.session_state:
+    st.session_state.summary_generated = False
 
-            # Add rank column before selecting top_n
-            df_filtered = df_filtered.sort_values('risk_adj_score', ascending=False).reset_index(drop=True)
-            df_filtered['rank'] = df_filtered['risk_adj_score'].rank(ascending=False, method='min').astype(int)
-            
-            # Now select the top_n stocks
-            df_final = df_filtered.head(top_n)
-            
-            # Store in session state
-            st.session_state.df_final = df_final
-            st.session_state.weights = weights
-    
-    if 'df_final' not in st.session_state:
-        st.warning("Configure parameters and click 'Run Analysis'")
-        return
-    
-    df_final = st.session_state.df_final
-    weights = st.session_state.weights
-    
-    # Summary stats
-    st.subheader("Portfolio Summary")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Stocks in Portfolio", len(df_final))
-    col2.metric("Avg 3m Momentum", f"{df_final['mom_3m'].mean():.1f}%")
-    col3.metric("Avg 12m Momentum", f"{df_final['mom_12m'].mean():.1f}%")
-    
-    # GenAI Explanation
-    st.subheader("AI Portfolio Analysis")
-    with st.expander("See explanation"):
-        summary = generate_summary(df_final)
-        st.info(summary)
-    
-    # Main results
-    st.subheader("Top Momentum Stocks")
-    st.dataframe(
-        df_final[['symbol', 'risk_adj_score', 'rank', 'mom_3m', 'mom_6m', 'mom_12m', 'volatility']]
-        .sort_values('risk_adj_score', ascending=False) # Ensure sorting for display consistency
-        .style.background_gradient(subset=['risk_adj_score'], cmap='YlGnBu')
-        .format({'mom_3m': '{:.1f}%', 'mom_6m': '{:.1f}%', 'mom_12m': '{:.1f}%'}),
-        height=600
-    )
-    
-    # Visualizations
-    st.subheader("Portfolio Visualizations")
-    
-    tab1, tab2, tab3 = st.tabs(["Momentum Scores", "Heatmap", "Price vs EMA"])
-    
-    with tab1:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.barplot(x='risk_adj_score', y='symbol', data=df_final.sort_values('risk_adj_score', ascending=True), palette='viridis')
-        plt.title(f"Top {top_n} Stocks by Risk-Adjusted Momentum")
-        plt.xlabel("Score")
-        plt.ylabel("Symbol")
-        st.pyplot(fig)
-    
-    with tab2:
-        heatmap_cols = ['mom_3m', 'mom_6m', 'mom_12m', 'volatility', 'risk_adj_score']
-        heatmap_data = df_final[heatmap_cols].copy()
-        heatmap_data.index = df_final['symbol']
-        
-        fig, ax = plt.subplots(figsize=(12, 8))
-        sns.heatmap(
-            heatmap_data,
-            cmap="YlGnBu",
-            linewidths=0.3,
-            annot=True,
-            fmt=".1f",
-            cbar=True
-        )
-        plt.title("Momentum Metrics Heatmap")
-        st.pyplot(fig)
-    
-    with tab3:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        plt.scatter(df_final['ema_200'], df_final['price'], s=100, alpha=0.6)
-        
-        # Add 1:1 line
-        max_val = max(df_final[['price', 'ema_200']].max().max(), 1.0) # Ensure max_val is at least 1.0 to avoid potential issues
-        plt.plot([0, max_val], [0, max_val], 'r--')
-        
-        # Add labels
-        for i, row in df_final.iterrows():
-            plt.text(row['ema_200']*1.01, row['price']*1.01, row['symbol'], fontsize=9)
-        
-        plt.title("Price vs 200-EMA")
-        plt.xlabel("200-EMA")
-        plt.ylabel("Current Price")
-        plt.grid(True)
-        st.pyplot(fig)
-    
-    # Download button
-    st.download_button(
-        label="Download Portfolio",
-        data=df_final.to_csv(index=False),
-        file_name=f"momentum_portfolio_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
-        mime='text/csv'
-    )
+
+def main():
+    st.title("🚀 AlphaGrid Dashboard")
+    st.markdown("""
+    *A data-driven momentum strategy on the **Nifty 500**:*
+    - Combines **12-month momentum**, price filters, and **risk-adjusted scoring**
+    - Visualizes top stocks, momentum heatmaps & price trends vs 200-EMA
+    """)
+    top_n_stocks=30 # Default number of top stocks to display
+    try:
+        nifty_500_symbols = load_universe(UNIVERSE_FILE)
+        df = fetch_data(nifty_500_symbols)
+        df_metrics = compute_metrics_for_all(df)
+
+        # Apply filters, now passing weights to apply_filters if needed for score calculation
+        # Assuming apply_filters uses the weights to calculate risk_adj_score
+        df_final = apply_filters(df_metrics) # Pass weights here
+
+        if not df_final.empty:
+            top_stocks = df_final.sort_values('risk_adj_score', ascending=False).head(top_n_stocks)
+
+            # Create tabs for better organization
+            tab1, tab2, tab3 = st.tabs(["📊 Top Stock Visualizations", "📝 AI Insights", "Detailed Data"])
+
+            with tab1:
+                st.subheader(f"🏆 Top {top_n_stocks} Momentum Stocks Overview")
+                st.write("Here's a summary of the highest, lowest, and average risk-adjusted scores among the top stocks.")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Highest Score", f"{top_stocks['risk_adj_score'].max():.2f}")
+                col2.metric("Lowest Score (Top List)", f"{top_stocks['risk_adj_score'].min():.2f}")
+                col3.metric("Avg Score (Top List)", f"{top_stocks['risk_adj_score'].mean():.2f}")
+
+                st.markdown("---")
+                st.subheader("🥇 Top Stocks by Risk-Adjusted Momentum Score")
+                st.write(f"This chart displays the top {top_n_stocks} stocks ranked by their calculated risk-adjusted momentum score.")
+                if not top_stocks.empty:
+                    fig, ax = plt.subplots(figsize=(12, max(6, len(top_stocks) * 0.4))) # Dynamic height, slightly larger width
+                    sns.barplot(x='risk_adj_score', y='symbol', data=top_stocks, palette='viridis', ax=ax)
+                    plt.title(f"Top {top_n_stocks} Stocks by Risk-Adjusted Momentum Score")
+                    plt.xlabel("Risk-Adjusted Score")
+                    plt.ylabel("Stock Symbol")
+                    st.pyplot(fig)
+                else:
+                    st.info("No top stocks to visualize for Risk-Adjusted Score.")
+
+                st.markdown("---")
+                st.subheader("🔥 12-Month Momentum Heatmap")
+                st.write(f"This heatmap shows the 12-month momentum percentage for the top {top_n_stocks} stocks. Higher values indicate stronger momentum.")
+                if not top_stocks.empty and 'mom_12m' in top_stocks.columns:
+                    fig, ax = plt.subplots(figsize=(8, max(6, len(top_stocks) * 0.5))) # Adjust size
+                    mom_12m_heatmap_data = top_stocks[['mom_12m']].set_index(top_stocks['symbol'])
+
+                    sns.heatmap(
+                        mom_12m_heatmap_data,
+                        cmap="RdYlGn",
+                        linewidths=0.5,
+                        linecolor='gray',
+                        annot=True,
+                        fmt=".1f",
+                        cbar_kws={'label': '12-Month Momentum (%)'}
+                    )
+                    plt.title(f"12-Month Momentum for Top {top_n_stocks} Stocks")
+                    plt.xlabel("")
+                    plt.ylabel("Stock Symbol")
+                    plt.yticks(rotation=0)
+                    st.pyplot(fig)
+                else:
+                    st.info("No top stocks data or 'mom_12m' column missing for 12-Month Momentum Heatmap.")
+
+                st.markdown("---")
+                st.subheader("⚖️ Price vs 200-Day Exponential Moving Average (EMA)")
+                st.write(f"This scatter plot compares the current price of the top {top_n_stocks} stocks against their 200-day EMA. Stocks above the red dashed line are trading above their 200-day EMA, often seen as a bullish sign.")
+                if not top_stocks.empty and 'ema_200' in top_stocks.columns and 'price' in top_stocks.columns:
+                    fig, ax = plt.subplots(figsize=(10, 8)) # Slightly larger for better clarity
+                    plt.scatter(top_stocks['ema_200'], top_stocks['price'], s=200, alpha=0.8, edgecolors='w', linewidth=0.7) # Larger points
+
+                    max_val = max(top_stocks[['price', 'ema_200']].max().max(), 1.0) * 1.1
+                    min_val = min(top_stocks[['price', 'ema_200']].min().min(), 0.0) * 0.9
+                    plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Price = 200-EMA')
+
+                    # Label the points with stock symbols, with a simple adjustment to prevent direct overlap
+                    for i, row in top_stocks.iterrows():
+                        plt.text(row['ema_200'] * 1.01, row['price'] * 1.01, row['symbol'], fontsize=10, ha='left', va='bottom', color='darkblue')
+
+                    plt.title(f"Price vs 200-EMA for Top {top_n_stocks} Stocks")
+                    plt.xlabel("200-Day Exponential Moving Average (EMA)")
+                    plt.ylabel("Current Price")
+                    plt.grid(True, linestyle='--', alpha=0.6)
+                    plt.legend()
+                    plt.xlim(min_val, max_val)
+                    plt.ylim(min_val, max_val)
+                    st.pyplot(fig)
+                else:
+                    st.info("No top stocks data to plot Price vs 200-EMA, or required columns are missing.")
+
+            with tab2:
+                st.subheader("🤖 AI-Powered Insights")
+                st.write("Click the button below to get an AI-generated explanation and summary of the top-performing stocks based on the current parameters.")
+                if st.button("Generate AI Summary", help="Click to get an AI-generated explanation of the top stocks."):
+                    with st.spinner("Generating summary... This might take a moment."):
+                        try:
+                            # Ensure generate_summary can handle the top_stocks DataFrame
+                            st.session_state.genai_explanation = generate_summary(top_stocks, top_n=top_n_stocks)
+                            st.session_state.summary_generated = True
+                        except Exception as e:
+                            st.error(f"❌ Failed to generate AI summary: {e}")
+                            st.session_state.genai_explanation = ""
+                            st.session_state.summary_generated = False
+
+                if st.session_state.summary_generated and st.session_state.genai_explanation:
+                    st.info(f"💡 **AI Summary:** {st.session_state.genai_explanation}")
+                elif st.session_state.summary_generated and not st.session_state.genai_explanation:
+                    st.warning("No AI summary could be generated with the current data or parameters.")
+                else:
+                    st.info("Click 'Generate AI Summary' to get an AI-powered explanation of the top stocks.")
+
+            with tab3:
+                st.subheader("Detailed Top Stocks Data Table")
+                st.write(f"This table provides a comprehensive view of the data for the top {top_n_stocks} stocks, including price, momentum, volatility, and risk-adjusted score.")
+                if not top_stocks.empty:
+                    detailed_columns = [
+                        'symbol', 'price', 'ema_200', 'mom_3m', 'mom_6m', 'mom_12m',
+                        'volatility', 'risk_adj_score' # 'date' if available, but not in the provided image data
+                    ]
+                    existing_detailed_columns = [col for col in detailed_columns if col in top_stocks.columns]
+                    st.dataframe(top_stocks[existing_detailed_columns].style.format({
+                        'price': "{:.2f}",
+                        'ema_200': "{:.2f}",
+                        'mom_3m': "{:.2f}",
+                        'mom_6m': "{:.2f}",
+                        'mom_12m': "{:.2f}",
+                        'volatility': "{:.4f}",
+                        'risk_adj_score': "{:.2f}"
+                    }))
+                else:
+                    st.info("No detailed stock data available.")
+
+        else:
+            st.warning("⚠️ No stocks found matching the criteria. Please adjust filters (e.g., minimum price, outlier percentage) in the sidebar.")
+
+    except Exception as e:
+        st.error(f"❌ An unexpected error occurred: {e}. Please check the data sources or configuration.")
+        st.exception(e) # Display the full traceback for debugging
 
 if __name__ == "__main__":
     main()

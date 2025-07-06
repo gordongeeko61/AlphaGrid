@@ -3,7 +3,7 @@
 import pandas as pd
 from config import DEFAULT_OUTLIER_PCT, MIN_PRICE, MIN_VOLUME
 
-def apply_filters(df_metrics, data, outlier_pct=DEFAULT_OUTLIER_PCT):
+def apply_filters(df_metrics):
     """
     Apply filters to the metrics DataFrame
     
