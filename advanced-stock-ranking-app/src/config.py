@@ -1,7 +1,7 @@
 # config.py
 
 # Universe configuration
-UNIVERSE_FILE = "data/ind_nifty500list.csv"
+UNIVERSE_FILE = "src/data/ind_nifty500list.csv"
 
 # Momentum parameters
 LOOKBACK_PERIODS = {
